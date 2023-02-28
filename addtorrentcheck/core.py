@@ -64,7 +64,6 @@ class Core(CorePluginBase):
         elif time.time() - tid_status['time_added'] > 300:
             Core.timer[torrent_id].stop();
         else:
-            time.sleep(5)
             log.info("[AddTrackerCheck](%s) : Updating Tracker", torrent_id)
             tid.force_reannounce();
          
@@ -73,7 +72,7 @@ class Core(CorePluginBase):
             return
         log.info("[AddTrackerCheck](%s) : Adding New Torrent", torrent_id)
         Core.timer[torrent_id] = LoopingCall(self.update_tracker, torrent_id)
-        Core.timer[torrent_id].start(2)
+        Core.timer[torrent_id].start(5, now=False)
 
     def enable(self):
         # Go through the commands list and register event handlers
