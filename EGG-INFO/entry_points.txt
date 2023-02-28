@@ -1,0 +1,4 @@
+
+    [deluge.plugin.core]
+    AddTorrentCheck = addtorrentcheck:CorePlugin
+    
