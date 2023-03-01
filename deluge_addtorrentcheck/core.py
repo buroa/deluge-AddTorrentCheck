@@ -40,7 +40,7 @@ class Core(CorePluginBase):
             Core.timer[torrent_id].stop();
         else:
             log.info("[AddTrackerCheck](%s) : Updating Tracker", torrent_id)
-            tid.force_reannounce();
+            tid.handle.force_reannounce(0,-1,1);
          
     def post_torrent_add(self, torrent_id, *from_state):
         if component.get('TorrentManager').get_state() != 'Started':
