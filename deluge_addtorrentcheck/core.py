@@ -14,13 +14,14 @@ import deluge.configmanager
 from deluge.core.rpcserver import export
 from deluge.plugins.pluginbase import CorePluginBase
 import time
+import math
 from twisted.internet.task import LoopingCall
 import deluge.component as component
 
 log = logging.getLogger(__name__)
 
 DEFAULT_PREFS = {
-    'delay': 5,
+    'delay': 15,
     'time': 300
 }
 
@@ -30,28 +31,47 @@ class Core(CorePluginBase):
     timer = {}
 
     def update_tracker(self, torrent_id):
-        tid = component.get('TorrentManager').torrents[torrent_id]
-        tid_status = tid.get_status(['tracker_status','time_added'])
-        log.info("[AddTrackerCheck](%s)(%s) : %s", torrent_id, time.time() - tid_status['time_added'], tid_status['tracker_status'])
+        torrent = component.get("TorrentManager").torrents[torrent_id]
+        torrent_status = torrent.get_status(["tracker_status", "time_added"])
+        torrent_total_time = time.time() - torrent_status["time_added"]
 
-        if tid_status['tracker_status'].find("Announce OK") != -1:
-            Core.timer[torrent_id].stop();
-        elif time.time() - tid_status['time_added'] > self.config['time']:
-            Core.timer[torrent_id].stop();
-        else:
-            log.info("[AddTrackerCheck](%s) : Updating Tracker", torrent_id)
-            tid.handle.force_reannounce(0,-1,1);
+        if torrent_total_time > self.config["time"]:
+            Core.timer[torrent_id].stop()
+            return
+        
+        tracker_status = torrent_status["tracker_status"]
+        log.info("[AddTrackerCheck](%s)(%s): %s", torrent_id, torrent_total_time, tracker_status)
+
+        if "Announce OK" in tracker_status:
+            peers = len(torrent.get_peers())
+            progress = torrent.get_progress()
+
+            if progress and peers >= 3:
+                Core.timer[torrent_id].stop()
+                return
+
+            total_retries = math.floor(torrent_total_time / self.config["delay"])
+            retries_per_half_minute = math.floor(30 / self.config["delay"])
+            if total_retries % retries_per_half_minute == 0:
+                log.info("[AddTrackerCheck](%s): Re-starting torrent", torrent_id)
+                torrent.pause()
+                time.sleep(1)
+                torrent.resume()
+                time.sleep(2)
+        
+        torrent.handle.force_reannounce(0, -1, 1)
+        log.info("[AddTrackerCheck](%s): Re-announced trackers", torrent_id)
          
     def post_torrent_add(self, torrent_id, *from_state):
         if component.get('TorrentManager').get_state() != 'Started':
             return
-        log.info("[AddTrackerCheck](%s) : Adding New Torrent", torrent_id)
+        
+        log.info("[AddTrackerCheck](%s): Adding New Torrent", torrent_id)
         Core.timer[torrent_id] = LoopingCall(self.update_tracker, torrent_id)
         Core.timer[torrent_id].start(self.config['delay'], now=False)
 
     def enable(self):
-        self.config = deluge.configmanager.ConfigManager(
-            'addtorrentcheck.conf', DEFAULT_PREFS)
+        self.config = deluge.configmanager.ConfigManager('addtorrentcheck.conf', DEFAULT_PREFS)
         self.config.save()
         component.get("EventManager").register_event_handler("TorrentAddedEvent", self.post_torrent_add)
 
